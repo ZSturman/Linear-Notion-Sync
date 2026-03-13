@@ -1,0 +1,75 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Build output
+dist/
+build/
+out/
+target/
+
+# Cache
+.cache/
+.tmp/
+temp/
+*.cache
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Java
+*.class
+*.jar
+*.war
+
+# C / C++
+*.o
+*.obj
+*.exe
+
+# Archives
+*.zip
+*.tar
+*.gz
+*.rar
+
+# Test / coverage
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Misc
+*.pid
+*.seed
+
+# Local sync state
+sync_state.db
+*.sqlite
+*.sqlite3
