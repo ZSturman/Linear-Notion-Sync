@@ -1,0 +1,83 @@
+{
+  "name": "notion-linear-error-log",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "4931c718-6c5c-41dd-98f6-16e526867c83",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input = $input.first()?.json || {};\nconst workflowName = input.workflow?.name || 'unknown-workflow';\nconst executionId = String(input.execution?.id || Date.now());\nconst failedNode = input.node?.name || input.lastNodeExecuted || 'unknown-node';\nconst message = input.error?.message || input.error?.description || 'Unhandled workflow error';\nconst timestamp = new Date().toISOString();\nreturn [{\n  json: {\n    workflowName,\n    executionId,\n    failedNode,\n    timestamp,\n    details: message,\n    status: 'failed'\n  }\n}];"
+      },
+      "id": "9914f61d-cd70-48d7-b26a-78ce784486f9",
+      "name": "Build Error Log Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "responseFormat": "json",
+        "jsonParameters": true,
+        "headerParametersJson": "={\"Authorization\": \"Bearer \" + $env.NOTION_TOKEN, \"Notion-Version\": \"2022-06-28\", \"Content-Type\": \"application/json\"}",
+        "bodyParametersJson": "={{ JSON.stringify({ parent: { database_id: $env.NOTION_AUTOMATION_LOG_DB_ID }, properties: { timestamp: { date: { start: $json.timestamp } }, name: { title: [{ text: { content: `${$json.workflowName} failure` } }] }, details: { rich_text: [{ text: { content: $json.details.slice(0, 1900) } }] }, status: { select: { name: 'failed' } }, workflow: { rich_text: [{ text: { content: $json.workflowName } }] }, 'execution id': { rich_text: [{ text: { content: $json.executionId } }] }, 'source trigger': { rich_text: [{ text: { content: 'error-trigger' } }] }, 'failed node': { rich_text: [{ text: { content: $json.failedNode } }] } } }) }}",
+        "options": {}
+      },
+      "id": "ca58e4c3-b863-4eda-89ef-bbad8666e5ab",
+      "name": "Create Notion Error Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Error Log Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Log Payload": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Error Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1be4238d-18c8-40c3-b989-b5e216d87ef6",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

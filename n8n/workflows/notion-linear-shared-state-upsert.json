@@ -1,0 +1,108 @@
+{
+  "name": "notion-linear-shared-state-upsert",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "4f7acc3e-f6a7-4476-b370-f4d0377d2013",
+      "name": "Execute Sub-workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const payload = $input.first()?.json || {};\nconst record = payload.record || payload;\nconst statePath = payload.statePath || $env.N8N_SYNC_STATE_PATH || '/home/node/.n8n-files/notion-linear-sync/sync_state.json';\nreturn [{ json: { record, statePath } }];"
+      },
+      "id": "42a8a89f-aa9d-4d5a-8200-2c43091f15ae",
+      "name": "Prepare State Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "executeOnce": true,
+        "command": "node <<'NODE'\nconst fs = require('fs');\nconst path = require('path');\nconst input = JSON.parse(process.env.N8N_STATE_INPUT || '{}');\nconst filePath = input.statePath;\nconst directory = path.dirname(filePath);\nfs.mkdirSync(directory, { recursive: true });\nlet state = { version: 1, entities: { project: [], milestone: [], task: [] } };\nif (fs.existsSync(filePath)) {\n  try {\n    state = JSON.parse(fs.readFileSync(filePath, 'utf8'));\n  } catch (error) {\n    state = { version: 1, entities: { project: [], milestone: [], task: [] } };\n  }\n}\nconst entityType = input.record.entityType;\nconst bucket = state.entities[entityType] || [];\nconst next = bucket.filter((entry) => !(entry.notionId && entry.notionId === input.record.notionId) && !(entry.linearId && entry.linearId === input.record.linearId));\nnext.push(input.record);\nstate.entities[entityType] = next;\nfs.writeFileSync(filePath, JSON.stringify(state, null, 2));\nprocess.stdout.write(JSON.stringify({ ok: true, entityType, saved: input.record }));\nNODE",
+        "options": {
+          "env": {
+            "N8N_STATE_INPUT": "={{ JSON.stringify($json) }}"
+          }
+        }
+      },
+      "id": "24ec3a01-8570-4122-af2b-a1f2cae0aeb3",
+      "name": "Write State File",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        760,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const raw = $input.first()?.json?.stdout || '{}';\nconst parsed = JSON.parse(raw.trim() || '{}');\nreturn [{ json: parsed }];"
+      },
+      "id": "4cbef110-8838-4494-89b5-85b0de08ba65",
+      "name": "Parse State Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Sub-workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare State Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare State Record": {
+      "main": [
+        [
+          {
+            "node": "Write State File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write State File": {
+      "main": [
+        [
+          {
+            "node": "Parse State Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d25e6a70-294b-4f4e-98f3-01cf2fb2e33f",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

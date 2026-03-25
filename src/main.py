@@ -146,8 +146,10 @@ def status(ctx: click.Context, entity_type: str) -> None:
     # Show recent
     if states:
         click.echo(f"\n  Recent syncs:")
-        for state in sorted(states, key=lambda s: s.last_synced_at or '', reverse=True)[:5]:
-            click.echo(f"    - notion:{state.notion_page_id[:8]}... <-> linear:{state.linear_id[:8] if state.linear_id else 'N/A'}...")
+        for state in sorted(states, key=lambda s: s.last_synced, reverse=True)[:5]:
+            notion_id = f"{state.notion_id[:8]}..." if state.notion_id else 'N/A'
+            linear_id = f"{state.linear_id[:8]}..." if state.linear_id else 'N/A'
+            click.echo(f"    - notion:{notion_id} <-> linear:{linear_id}")
 
 
 @cli.command()

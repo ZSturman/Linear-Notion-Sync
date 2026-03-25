@@ -1,13 +1,15 @@
 from datetime import datetime, timezone
 
 import pytest
+from click.testing import CliRunner
 
 from src.config import Config, FieldMappings, LinearConfig, NotionConfig
+from src.main import cli
 from src.models.base import SyncSource
 from src.models.task import UnifiedTask
 from src.sync.engine import SyncEngine
 from src.sync.reconciler import Change, ChangeType
-from src.utils.state import SyncStateStore
+from src.utils.state import SyncState, SyncStateStore
 
 
 class FakeNotionClient:
@@ -57,6 +59,31 @@ def test_task_status_aliases_match_linear_states() -> None:
     assert mappings.task_statuses_match("ToDo", "Backlog", "backlog")
     assert mappings.task_statuses_match("In Review", "In Progress", "started")
     assert not mappings.task_statuses_match("Done", "In Progress", "started")
+
+
+def test_status_command_uses_sync_state_fields(tmp_path, monkeypatch) -> None:
+    config = build_config(tmp_path)
+    state_store = SyncStateStore(config.state_db_path)
+    state_store.upsert(
+        SyncState(
+            entity_type="task",
+            notion_id="notion-page-1234",
+            linear_id="linear-issue-5678",
+            notion_last_modified=None,
+            linear_last_modified=None,
+            content_hash="abc123",
+            last_synced=datetime(2026, 3, 18, 12, 0, tzinfo=timezone.utc),
+        )
+    )
+
+    monkeypatch.setattr("src.main.load_config", lambda: config)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["status", "tasks"])
+
+    assert result.exit_code == 0
+    assert "Total synced: 1" in result.output
+    assert "notion:notion-p... <-> linear:linear-i..." in result.output
 
 
 @pytest.mark.asyncio

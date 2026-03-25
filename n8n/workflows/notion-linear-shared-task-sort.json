@@ -1,0 +1,53 @@
+{
+  "name": "notion-linear-shared-task-sort",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b77399ac-c643-43c3-9647-4e1d4d9c9bf5",
+      "name": "Execute Sub-workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const payload = $input.first()?.json || {};\nconst changes = payload.changes || [];\nconst byId = new Map();\nfor (const change of changes) {\n  const id = change.record?.notionId || change.record?.linearId;\n  if (id) byId.set(id, change);\n}\nconst visited = new Set();\nconst active = new Set();\nconst ordered = [];\nconst errors = [];\n\nfunction walk(change) {\n  const id = change.record?.notionId || change.record?.linearId;\n  if (!id || visited.has(id)) return;\n  if (active.has(id)) {\n    errors.push(`Cycle detected at ${id}`);\n    return;\n  }\n  active.add(id);\n  const parentId = change.record?.parentTaskNotionId || change.record?.parentTaskLinearId;\n  if (parentId && byId.has(parentId)) {\n    walk(byId.get(parentId));\n  }\n  active.delete(id);\n  visited.add(id);\n  ordered.push(change);\n}\n\nfor (const change of changes) walk(change);\nreturn [{ json: { changes: ordered, errors } }];"
+      },
+      "id": "90f7328a-fdef-4f28-b953-6f5f77ac9966",
+      "name": "Sort Task Changes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        280
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Sub-workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Sort Task Changes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1229efdb-0caa-4c52-805c-30600c4e413b",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

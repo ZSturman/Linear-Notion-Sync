@@ -1,0 +1,53 @@
+{
+  "name": "notion-linear-shared-reconcile",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9d637d22-4c05-42f4-a4fb-58597ddf72db",
+      "name": "Execute Sub-workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input = $input.first()?.json || {};\nconst notionRecords = input.notionRecords || [];\nconst linearRecords = input.linearRecords || [];\nconst stateRecords = input.stateRecords || [];\nconst conflictStrategy = input.conflictStrategy || 'last-write-wins';\n\nconst linearById = new Map(linearRecords.filter((record) => record.linearId).map((record) => [record.linearId, record]));\nconst stateByPair = new Map(stateRecords.map((record) => [`${record.notionId || ''}::${record.linearId || ''}`, record]));\nconst touchedLinearIds = new Set();\n\nfunction asMillis(value) {\n  if (!value) return 0;\n  const date = new Date(value);\n  return Number.isNaN(date.getTime()) ? 0 : date.getTime();\n}\n\nfunction resolveConflict(notionChanged, linearChanged, notionRecord, linearRecord) {\n  if (notionChanged && !linearChanged) return 'notion';\n  if (linearChanged && !notionChanged) return 'linear';\n  if (!notionChanged && !linearChanged) return 'none';\n  if (conflictStrategy === 'notion-primary') return 'notion';\n  if (conflictStrategy === 'linear-primary') return 'linear';\n  return asMillis(notionRecord.updatedAt) >= asMillis(linearRecord.updatedAt) ? 'notion' : 'linear';\n}\n\nconst changes = [];\n\nfor (const notionRecord of notionRecords) {\n  const linearRecord = notionRecord.linearId ? linearById.get(notionRecord.linearId) : undefined;\n  const state = stateByPair.get(`${notionRecord.notionId || ''}::${notionRecord.linearId || linearRecord?.linearId || ''}`) || null;\n\n  if (!linearRecord) {\n    changes.push({ action: 'create', source: 'notion', target: 'linear', entityType: input.entityType, record: notionRecord, state });\n    continue;\n  }\n\n  touchedLinearIds.add(linearRecord.linearId);\n\n  const notionChanged = !state || asMillis(notionRecord.updatedAt) > asMillis(state.notionLastModified);\n  const linearChanged = !state || asMillis(linearRecord.updatedAt) > asMillis(state.linearLastModified);\n  const contentChanged = notionRecord.contentHash !== linearRecord.contentHash;\n\n  if (!contentChanged) continue;\n\n  const winner = resolveConflict(notionChanged, linearChanged, notionRecord, linearRecord);\n  if (winner === 'notion') {\n    changes.push({ action: 'update', source: 'notion', target: 'linear', entityType: input.entityType, record: notionRecord, counterpart: linearRecord, state });\n  } else if (winner === 'linear') {\n    changes.push({ action: 'update', source: 'linear', target: 'notion', entityType: input.entityType, record: linearRecord, counterpart: notionRecord, state });\n  }\n}\n\nfor (const linearRecord of linearRecords) {\n  if (touchedLinearIds.has(linearRecord.linearId)) continue;\n  const state = stateRecords.find((record) => record.linearId === linearRecord.linearId) || null;\n  changes.push({ action: 'create', source: 'linear', target: 'notion', entityType: input.entityType, record: linearRecord, state });\n}\n\nreturn [{\n  json: {\n    entityType: input.entityType,\n    conflictStrategy,\n    changes,\n    counts: {\n      total: changes.length,\n      notionToLinear: changes.filter((change) => change.target === 'linear').length,\n      linearToNotion: changes.filter((change) => change.target === 'notion').length\n    }\n  }\n}];"
+      },
+      "id": "da1b5f6c-8b2e-47d9-8337-4edc1e6fbe4a",
+      "name": "Reconcile Records",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Execute Sub-workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Reconcile Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "51fbd5bc-80be-485d-b82c-f40a5b8df494",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
