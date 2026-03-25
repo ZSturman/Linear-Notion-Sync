@@ -1,279 +1,435 @@
-# Notion-Linear Sync Service
+# Linear-Notion Sync
 
-A Python-based bidirectional synchronization service between Notion and Linear for Projects, Milestones, and Tasks.
+Bidirectional sync between Notion and Linear for projects, milestones, and tasks, with an optional set of self-hosted n8n workflow exports for scheduled automation.
 
-## Features
+This repository contains two related pieces:
 
-- **Bidirectional Sync**: Changes in either system are synced to the other
-- **Entity Support**: Projects, Milestones (Project Milestones), and Tasks (Issues)
-- **Relation Preservation**: Maintains relationships between entities (project↔milestone, task↔project, parent↔subtask)
-- **Conflict Resolution**: Configurable strategies (last-write-wins, notion-primary, linear-primary)
-- **State Tracking**: SQLite-based persistence to track sync state and prevent duplicates
-- **Selective Sync**: Uses `linear sync` checkbox in Notion to control which records sync
-- **Dry Run Mode**: Preview changes before applying them
+- A Python CLI that performs the actual synchronization logic.
+- Optional n8n workflow exports that can run the sync on a schedule or from a Notion trigger.
+
+## What This Project Solves
+
+If you plan work in Notion but execute work in Linear, this project keeps the two systems aligned without treating one of them as read-only.
+
+It supports:
+
+- Bidirectional sync between Notion and Linear.
+- Projects, project milestones, and tasks/issues.
+- Relationship preservation across projects, milestones, and parent/subtask trees.
+- Conflict handling when both sides changed.
+- Persistent sync state so existing records are matched instead of duplicated.
+- Selective sync from Notion using the `linear sync` checkbox.
+- Dry-run support for safe testing.
+
+## Repository Contents
+
+```text
+src/                     Python sync service and CLI
+tests/                   Automated tests
+n8n/workflows/           Optional n8n workflow exports
+.env.example             Sample configuration
+requirements.txt         Python dependencies
+```
 
 ## Requirements
 
 - Python 3.10+
-- Notion Integration with access to Projects, Milestones, and Tasks databases
-- Linear API key
+- A Notion integration with access to your three target databases
+- A Linear API key
+- A Linear team that the authenticated user can access
+- Optional: a self-hosted n8n instance with the Execute Command node enabled
 
-## Installation
+## Quick Start
 
-1. Clone the repository:
-   ```bash
-   git clone <repo-url>
-   cd notion-linear-sync
-   ```
-
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Copy the example environment file and configure:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and database IDs
-   ```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NOTION_TOKEN` | Yes | Notion integration token |
-| `NOTION_PROJECTS_DB_ID` | Yes | Notion Projects database ID |
-| `NOTION_MILESTONES_DB_ID` | Yes | Notion Milestones database ID |
-| `NOTION_TASKS_DB_ID` | Yes | Notion Tasks database ID |
-| `LINEAR_API_KEY` | Yes | Linear API key |
-| `LINEAR_TEAM_KEY` | No | Linear team key (e.g., "PROJ") |
-| `SYNC_STATE_PATH` | No | Path to sync state database (default: `./sync_state.db`) |
-| `LOG_LEVEL` | No | Logging level (default: `INFO`) |
-| `CONFLICT_STRATEGY` | No | Conflict resolution strategy (default: `last-write-wins`) |
-
-### Notion Database Setup
-
-Each Notion database must have these properties:
-
-#### Projects Database
-| Property | Type | Purpose |
-|----------|------|---------|
-| `title` | Title | Project name |
-| `linear id` | Rich Text | Linear project ID (auto-filled) |
-| `linear sync` | Checkbox | Enable sync for this project |
-| `status` | Status | Project status (Predevelopment/Active/Dormant/Complete/Abandoned) |
-| `one liner` | Rich Text | Project description |
-| `started at` | Date | Project start date |
-
-#### Milestones Database
-| Property | Type | Purpose |
-|----------|------|---------|
-| `milestone` | Title | Milestone name |
-| `linear id` | Rich Text | Linear milestone ID (auto-filled) |
-| `linear sync` | Checkbox | Enable sync for this milestone |
-| `description` | Rich Text | Milestone description |
-| `project` | Relation | Link to project |
-| `due date (manual)` | Date | Due date (write target) |
-| `effective due date` | Formula | Due date (read source) |
-
-#### Tasks Database
-| Property | Type | Purpose |
-|----------|------|---------|
-| `task` | Title | Task title |
-| `linear id` | Rich Text | Linear issue ID (auto-filled) |
-| `linear sync` | Checkbox | Enable sync for this task |
-| `complete` | Checkbox | Task completion status |
-| `status` | Select | Task workflow status (for example Backlog/In Progress/Done) |
-| `project` | Relation | Link to project |
-| `milestones` | Relation | Link to milestone |
-| `parent task` | Relation | Link to parent task (for subtasks) |
-| `priority` | Select | Priority (Low/Medium/High) |
-| `due date` | Date | Task due date |
-| `type` | Select | Task type (synced as Linear labels) |
-
-## Usage
-
-### Run Full Sync
+### 1. Clone the repository
 
 ```bash
-# Full bidirectional sync
-python -m src.main sync
-
-# Dry run to preview changes
-python -m src.main sync --dry-run
-
-# Verbose logging
-python -m src.main -v sync
+git clone https://github.com/ZSturman/Linear-Notion-Sync.git
+cd Linear-Notion-Sync
 ```
 
-### Selective Sync
+### 2. Create and activate a virtual environment
 
 ```bash
-# Sync only projects
-python -m src.main sync --projects-only
-
-# Sync only tasks from Notion to Linear
-python -m src.main sync --direction notion-to-linear --tasks-only
+python -m venv venv
+source venv/bin/activate
 ```
 
-### Check Status
+On Windows use `venv\Scripts\activate`.
+
+### 3. Install dependencies
 
 ```bash
-# View sync status for entity type
-python -m src.main status projects
-python -m src.main status milestones
-python -m src.main status tasks
+pip install -r requirements.txt
 ```
 
-### Validate Configuration
+### 4. Create your local environment file
+
+```bash
+cp .env.example .env
+```
+
+Then fill in the required values in `.env`.
+
+### 5. Validate your configuration
 
 ```bash
 python -m src.main validate
 ```
 
-### Reset Sync State
+This validates that required environment variables are present and that the clients can be initialized. It is a setup sanity check, not a full end-to-end sync test.
+
+### 6. Run a dry run first
 
 ```bash
-# Reset (with confirmation)
-python -m src.main reset
+python -m src.main sync --dry-run
+```
 
-# Force reset without confirmation
+### 7. Run a real sync
+
+```bash
+python -m src.main sync
+```
+
+## Environment Variables
+
+The CLI and the n8n workflows share most configuration values.
+
+| Variable | CLI | n8n | Description |
+|----------|-----|-----|-------------|
+| `NOTION_TOKEN` | Required | Required | Notion integration token |
+| `NOTION_PROJECTS_DB_ID` | Required | Required | Notion projects database ID |
+| `NOTION_MILESTONES_DB_ID` | Required | Required | Notion milestones database ID |
+| `NOTION_TASKS_DB_ID` | Required | Required | Notion tasks database ID |
+| `LINEAR_API_KEY` | Required | Required | Linear API key |
+| `LINEAR_TEAM_ID` | Optional | Optional | Explicit Linear team ID |
+| `LINEAR_TEAM_KEY` | Optional | Optional | Human-friendly Linear team key such as `ENG` or `PROJ` |
+| `SYNC_STATE_PATH` | Optional | No | SQLite state file path for the Python CLI, default `./sync_state.db` |
+| `NOTION_AUTOMATION_LOG_DB_ID` | No | Required for exported workflows | Notion database used for n8n run logging |
+| `N8N_SYNC_STATE_PATH` | No | Optional | Shared JSON state file path for the n8n exports |
+| `LOG_LEVEL` | Optional | No | Logging level for the Python CLI |
+| `DRY_RUN` | Optional | No | Default dry-run mode for the Python CLI |
+| `CONFLICT_STRATEGY` | Optional | Optional | `last-write-wins`, `notion-primary`, or `linear-primary` |
+| `IMPORT_LINEAR_SYNC_DEFAULT` | Optional | No | When creating Notion pages from Linear, default `linear sync` to true |
+
+### Team Selection
+
+You can provide either `LINEAR_TEAM_ID` or `LINEAR_TEAM_KEY`.
+
+- If `LINEAR_TEAM_ID` is set, it is used directly.
+- If `LINEAR_TEAM_ID` is empty and `LINEAR_TEAM_KEY` is set, the client resolves the team ID from the key.
+- If both are empty, the client falls back to the first available team returned by Linear.
+
+## Notion Database Schema
+
+The property names below are currently hardcoded in the Python service and the exported n8n workflows. The names need to match exactly unless you also change the code.
+
+### Projects database
+
+| Property | Type | Purpose |
+|----------|------|---------|
+| `title` | Title | Project name |
+| `linear id` | Rich Text | Linked Linear project ID |
+| `linear sync` | Checkbox | Include this record in sync |
+| `status` | Status | Project state |
+| `one liner` | Rich Text | Project description |
+| `started at` | Date | Project start date |
+| `milestones` | Relation | Optional relation used by your workspace |
+| `tasks` | Relation | Optional relation used by your workspace |
+
+Supported project status mapping:
+
+| Notion | Linear |
+|--------|--------|
+| `Predevelopment` | `planned` |
+| `Active` | `started` |
+| `Dormant` | `paused` |
+| `Complete` | `completed` |
+| `Abandoned` | `canceled` |
+
+### Milestones database
+
+| Property | Type | Purpose |
+|----------|------|---------|
+| `milestone` | Title | Milestone name |
+| `linear id` | Rich Text | Linked Linear milestone ID |
+| `linear sync` | Checkbox | Include this record in sync |
+| `description` | Rich Text | Milestone description |
+| `project` | Relation | Linked project |
+| `tasks` | Relation | Optional relation used by your workspace |
+| `due date (manual)` | Date | Writable due date field |
+| `effective due date` | Formula | Read-side due date field |
+| `all tasks complete?` | Formula or Checkbox | Optional completion helper |
+
+### Tasks database
+
+| Property | Type | Purpose |
+|----------|------|---------|
+| `task` | Title | Task title |
+| `linear id` | Rich Text | Linked Linear issue ID |
+| `linear sync` | Checkbox | Include this record in sync |
+| `complete` | Checkbox | Completion flag |
+| `status` | Select | Workflow status |
+| `project` | Relation | Linked project |
+| `milestones` | Relation | Linked milestone |
+| `parent task` | Relation | Parent task for subtasks |
+| `subtasks` | Relation | Optional reverse relation |
+| `priority` | Select | Priority |
+| `due date` | Date | Due date |
+| `type` | Select | Task type, synced as a Linear label |
+| `url` | URL | Linked Linear issue URL |
+
+Supported task priorities:
+
+| Notion | Linear |
+|--------|--------|
+| `Urgent` | `1` |
+| `High` | `2` |
+| `Medium` | `3` |
+| `Low` | `4` |
+
+Task types synced as Linear labels:
+
+- `Redo`
+- `Plan`
+- `Fix`
+- `Test`
+- `Design`
+- `Research`
+- `Write`
+- `Build`
+- `Organize`
+- `Study`
+- `Watch`
+- `Share`
+
+## CLI Usage
+
+All commands are run through the module entrypoint:
+
+```bash
+python -m src.main <command>
+```
+
+### Sync everything
+
+```bash
+python -m src.main sync
+```
+
+### Preview changes without writing
+
+```bash
+python -m src.main sync --dry-run
+```
+
+### Limit the sync scope
+
+```bash
+python -m src.main sync --projects-only
+python -m src.main sync --milestones-only
+python -m src.main sync --tasks-only
+```
+
+### Limit the sync direction
+
+```bash
+python -m src.main sync --direction notion-to-linear
+python -m src.main sync --direction linear-to-notion
+```
+
+### Increase log detail
+
+```bash
+python -m src.main -v sync
+python -m src.main --json-logs sync
+```
+
+### Inspect saved sync state
+
+```bash
+python -m src.main status projects
+python -m src.main status milestones
+python -m src.main status tasks
+```
+
+This shows the number of saved sync records and the most recent record links stored in the state database.
+
+### Reset local sync state
+
+```bash
+python -m src.main reset
 python -m src.main reset --yes
 ```
 
-## Field Mappings
+Use this when you intentionally want the next run to behave like a first sync.
 
-### Priority Mapping
+## How the Sync Works
 
-| Notion | Linear |
-|--------|--------|
-| Low | 4 (Low) |
-| Medium | 3 (Medium) |
-| High | 2 (High) |
-| Urgent | 1 (Urgent) |
+The Python service follows the same high-level flow for each entity type:
 
-### Project Status Mapping
+1. Fetch records from Notion and Linear.
+2. Normalize both sides into shared internal models.
+3. Match records using saved state and the `linear id` property.
+4. Detect new records, updates, and conflicts.
+5. Resolve conflicts using the configured strategy.
+6. Apply creates and updates.
+7. Persist post-sync timestamps and content hashes.
 
-| Notion | Linear |
-|--------|--------|
-| Predevelopment | planned |
-| Active | started |
-| Dormant | paused |
-| Complete | completed |
-| Abandoned | canceled |
+### Sync order
 
-### Task Types
+The service runs entities in dependency order:
 
-The following task types are synced as Linear labels:
-- Redo, Plan, Fix, Test, Design, Research, Write, Build, Organize, Study, Watch, Share
+1. Projects
+2. Milestones
+3. Tasks
 
-## How It Works
+Tasks are ordered so parent tasks are created before subtasks.
 
-### Sync Process
+### Conflict resolution
 
-1. **Fetch**: Retrieve all records from both Notion and Linear
-2. **Compare**: Detect new, modified, and conflicting records
-3. **Resolve**: Apply conflict resolution strategy
-4. **Apply**: Create/update records in target systems
-5. **Persist**: Update sync state database
+When both Notion and Linear changed since the last saved sync state:
 
-### Sync Order
+- `last-write-wins` chooses the most recently modified side.
+- `notion-primary` always prefers Notion.
+- `linear-primary` always prefers Linear.
 
-Entities are synced in dependency order:
-1. **Projects** (no dependencies)
-2. **Milestones** (depend on projects)
-3. **Tasks** (depend on projects, milestones, and parent tasks)
+### How records are identified
 
-Tasks with parent-child relationships are topologically sorted to ensure parents are created before children.
+- The `linear sync` checkbox determines whether a Notion record is eligible.
+- The `linear id` property stores the Linear-side ID on the Notion record.
+- The local state store records the last synced timestamps and a content hash.
 
-### Identifying Synced Records
+## Optional n8n Automation
 
-- Records with `linear sync` checkbox checked are considered for sync
-- The `linear id` property links Notion records to Linear records
-- Sync state is persisted in SQLite to track last-modified timestamps
+The `n8n/workflows/` directory contains optional workflow exports for running the sync from a self-hosted n8n instance.
 
-### Conflict Resolution
+Included workflows:
 
-When both systems have changes since last sync:
-- **last-write-wins**: Most recently modified record wins
-- **notion-primary**: Notion record always wins
-- **linear-primary**: Linear record always wins
+- `notion-linear-projects-sync.json`
+- `notion-linear-milestones-sync.json`
+- `notion-linear-tasks-sync.json`
+- `notion-linear-error-log.json`
+- `notion-linear-shared-reconcile.json`
+- `notion-linear-shared-state-upsert.json`
+- `notion-linear-shared-task-sort.json`
 
-## Architecture
+### Important notes for n8n
 
-```
-src/
-├── config.py          # Configuration management
-├── main.py            # CLI entrypoint
-├── clients/
-│   ├── notion_client.py   # Notion API wrapper
-│   └── linear_client.py   # Linear GraphQL client
-├── models/
-│   ├── base.py            # Base sync record classes
-│   ├── project.py         # UnifiedProject model
-│   ├── milestone.py       # UnifiedMilestone model
-│   └── task.py            # UnifiedTask model
-├── mappers/
-│   ├── project_mapper.py  # Project field mapping
-│   ├── milestone_mapper.py # Milestone field mapping
-│   └── task_mapper.py     # Task field mapping
-├── sync/
-│   ├── reconciler.py      # Change detection
-│   ├── relation_resolver.py # Relation resolution
-│   └── engine.py          # Sync orchestration
-└── utils/
-    ├── logging.py         # Structured logging
-    ├── retry.py           # Retry and rate limiting
-    └── state.py           # Sync state persistence
-```
+- These exports assume a self-hosted n8n instance with the Execute Command node enabled.
+- The main workflows are exported inactive so you can review and configure them before enabling them.
+- The Notion Trigger nodes are intentionally left mostly unconfigured so you can bind them to your own databases in the UI.
+- The workflows rely on environment variables instead of embedded secrets.
+- The workflows expect a shared JSON state file, usually inside a mounted n8n data volume.
+
+### Suggested workflow order
+
+1. Projects sync
+2. Milestones sync
+3. Tasks sync
+
+The task workflow expects project and milestone mappings to already exist in the shared state file.
+
+### Suggested schedules from the exports
+
+- Projects: every 15 minutes
+- Milestones: every 15 minutes
+- Tasks: every 5 minutes
 
 ## Development
 
-### Running Tests
+### Run tests
 
 ```bash
 pytest tests/
 ```
 
-### Code Style
+### Install or update dependencies
 
 ```bash
-# Format code
-black src/ tests/
-
-# Type checking
-mypy src/
+pip install -r requirements.txt
 ```
+
+### Main Python dependencies
+
+- `notion-client`
+- `httpx`
+- `python-dotenv`
+- `click`
+- `python-dateutil`
+
+## Security Notes
+
+- Do not commit `.env`.
+- Treat `sync_state.db` as local runtime state, not project data.
+- If you use the n8n exports, keep secrets in environment variables or the n8n credential store, not inside workflow JSON.
+- Review workflow exports before publishing changes if you edited nodes in the UI.
 
 ## Troubleshooting
 
-### Common Issues
+### Missing required environment variables
 
-**"Missing required environment variables"**
-- Ensure all required variables are set in `.env`
-- Run `python -m src.main validate` to check configuration
+- Re-check `.env` against `.env.example`.
+- Run `python -m src.main validate`.
 
-**"Linear team not found"**
-- Check that `LINEAR_TEAM_KEY` matches your team's key
-- Leave it empty to use the first available team
+### Linear team not found
 
-**"Notion database not accessible"**
-- Ensure your Notion integration has access to all three databases
-- The integration must be explicitly shared with each database
+- Confirm `LINEAR_TEAM_KEY` matches your actual team key.
+- Or set `LINEAR_TEAM_ID` directly.
 
-**Rate Limiting**
-- Notion: 3 requests/second (automatically handled)
-- Linear: 5000 requests/hour (automatically handled)
-- Use dry run mode for testing to avoid hitting limits
+### Notion database not accessible
+
+- Make sure the integration is shared with each target database.
+- Double-check the database IDs in `.env`.
+
+### Records are not syncing from Notion
+
+- Confirm the record's `linear sync` checkbox is enabled.
+- Confirm the property names in Notion match the names documented above.
+
+### Status names do not match exactly
+
+- Task status matching is based on workflow state semantics, not only raw status-name equality.
+- Project status names must map to the supported project status values listed above.
+
+### Rate limits
+
+- Notion is handled conservatively at roughly 3 requests per second.
+- Linear is handled conservatively for the standard hourly rate limit.
+- Use `--dry-run` when testing changes to mappings or schema.
+
+## Project Structure
+
+```text
+src/
+   config.py
+   main.py
+   clients/
+      linear_client.py
+      notion_client.py
+   mappers/
+      milestone_mapper.py
+      project_mapper.py
+      task_mapper.py
+   models/
+      base.py
+      milestone.py
+      project.py
+      task.py
+   sync/
+      engine.py
+      reconciler.py
+      relation_resolver.py
+   utils/
+      logging.py
+      retry.py
+      state.py
+tests/
+n8n/workflows/
+```
 
 ## License
 
-MIT
+This repository does not currently include a license file.
+
+If you want the project to be MIT-licensed on GitHub, add a `LICENSE` file before publishing and keep the license section consistent with that file.
